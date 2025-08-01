@@ -17,18 +17,19 @@ class PaymentTransactionRepository extends ServiceEntityRepository
         parent::__construct($registry, PaymentTransaction::class);
     }
 
-    public function by(Request $request)
+    public function by(Request $request): array
     {
-        $values = $request->get('transaction-id');
+        $transactionId = $request->get('transaction-id');
 
-        if ($values) {
-            $messages = $this->getEntityManager()
-                ->createQuery(sprintf("SELECT t FROM App\Entity\PaymentTransaction t WHERE t.transaction_id = '%s';", $values))
+        if ($transactionId) {
+            // Use parameterized query to prevent SQL injection
+            return $this->getEntityManager()
+                ->createQuery('SELECT t FROM App\Entity\PaymentTransaction t WHERE t.transaction_id = :transactionId')
+                ->setParameter('transactionId', $transactionId)
                 ->getResult();
-        } else {
-            $messages = $this->findAll();
         }
 
-        return $messages;
+        // Return all transactions ordered by creation date (newest first)
+        return $this->findBy([], ['createdAt' => 'DESC']);
     }
 }
