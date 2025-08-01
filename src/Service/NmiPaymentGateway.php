@@ -3,36 +3,45 @@
 namespace App\Service;
 
 use App\Entity\PaymentTransaction;
+use App\Enum\PaymentStatus;
+use App\Exception\PaymentGatewayException;
+use App\Service\ValidationService;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use DOMDocument;
 use SimpleXMLElement;
 use Exception;
 use Symfony\Component\Uid\Uuid;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
+ * NMI Payment Gateway implementation
+ *
  * @see https://secure.nmi.com/merchants/resources/integration/integration_portal.php?tid=4a0d25146526480a75f81a71f616c04f#3step_methodology
  */
-class NmiPaymentGateway
+class NmiPaymentGateway implements PaymentGatewayInterface
 {
     private const NMI_THREE_STEP_URL = 'https://secure.nmi.com/api/v2/three-step';
 
     private EntityManagerInterface $entityManager;
     private LoggerInterface $logger;
     private HttpClientInterface $client;
+    private ValidationService $validationService;
     private string $nmiApiKey;
 
     public function __construct(
         EntityManagerInterface $entityManager,
         LoggerInterface $paymentLogger,
         HttpClientInterface $client,
+        ValidationService $validationService,
         string $nmiApiKey,
     ) {
         $this->entityManager = $entityManager;
         $this->logger = $paymentLogger;
         $this->client = $client;
+        $this->validationService = $validationService;
         $this->nmiApiKey = $nmiApiKey;
     }
 
@@ -40,12 +49,25 @@ class NmiPaymentGateway
      * Step 1: Initialize payment and get form URL
      */
     public function initializePayment(
-        $amount,
-        $currency = 'USD',
-        $redirectUrl = null,
+        float $amount,
+        string $currency = 'USD',
+        ?string $redirectUrl = null,
         array $billingInfo = [],
-        array $shippingInfo = [],
-    ) {
+        array $shippingInfo = []
+    ): array {
+        // Validate input parameters
+        $validationErrors = $this->validationService->validatePaymentData([
+            'amount' => $amount,
+            'currency' => $currency
+        ]);
+
+        if (!empty($validationErrors)) {
+            throw new PaymentGatewayException(
+                'Invalid payment data: ' . json_encode($validationErrors),
+                'VALIDATION_ERROR',
+                ['validation_errors' => $validationErrors]
+            );
+        }
         $xmlRequest = new DOMDocument('1.0', 'UTF-8');
         $xmlRequest->formatOutput = true;
         $xmlSale = $xmlRequest->createElement('sale');
@@ -106,7 +128,7 @@ class NmiPaymentGateway
     /**
      * Step 3: Complete transaction with token
      */
-    public function completeTransaction($request)
+    public function completeTransaction(Request $request): array
     {
         $tokenId = $request->get('token-id');
         $xmlRequest = new DOMDocument('1.0', 'UTF-8');
@@ -133,7 +155,7 @@ class NmiPaymentGateway
             $transaction->setTransactionId((string)$gwResponse->{'transaction-id'});
             $transaction->setAmount((float)$gwResponse->{'amount'});
             $transaction->setCurrencyCode((string)$gwResponse->{'currency'} ?: 'USD');
-            $transaction->setPaymentStatus('Approved');
+            $transaction->setPaymentStatus(PaymentStatus::APPROVED->value);
             $transaction->setLast4Digits(substr((string)$gwResponse->billing->{'cc-number'}, -4));
             $this->entityManager->persist($transaction);
             $this->entityManager->flush();
@@ -171,12 +193,18 @@ class NmiPaymentGateway
                 ],
                 'body' => $xmlRequest->saveXML(),
                 'timeout' => 30,
-                'verify_peer' => false, // Should be true in production
+                'verify_peer' => true, // Enable SSL verification for security
             ]);
 
             return $response->getContent();
         } catch (TransportExceptionInterface $e) {
-            throw new Exception("Request failed: " . $e->getMessage(), 0, $e);
+            throw new PaymentGatewayException(
+                "Gateway communication failed: " . $e->getMessage(),
+                'TRANSPORT_ERROR',
+                ['original_exception' => $e->getMessage()],
+                0,
+                $e
+            );
         }
     }
 
@@ -191,7 +219,7 @@ class NmiPaymentGateway
         $parentNode->appendChild($childNode);
     }
 
-    public function processRefund($originalTransactionId, $refundAmount)
+    public function processRefund(string $originalTransactionId, float $refundAmount): array
     {
         if ($refundAmount <= 0) {
             return ['status' => 'error', 'message' => 'Refund amount must be positive.'];
@@ -229,6 +257,91 @@ class NmiPaymentGateway
             );
 
             return ['status' => 'error', 'message' => $message];
+        }
+    }
+
+    /**
+     * Process rebilling/subscription charge
+     */
+    public function processRebilling(string $customerId, float $amount, string $currency = 'USD', array $metadata = []): array
+    {
+        if ($amount <= 0) {
+            return ['status' => 'error', 'message' => 'Rebilling amount must be positive.'];
+        }
+
+        $xmlRequest = new DOMDocument('1.0', 'UTF-8');
+        $xmlRequest->formatOutput = true;
+        $xmlSale = $xmlRequest->createElement('sale');
+
+        $this->appendXmlNode($xmlRequest, $xmlSale, 'api-key', $this->nmiApiKey);
+        $this->appendXmlNode($xmlRequest, $xmlSale, 'customer-id', $customerId);
+        $this->appendXmlNode($xmlRequest, $xmlSale, 'amount', $amount);
+        $this->appendXmlNode($xmlRequest, $xmlSale, 'currency', $currency);
+
+        // Add metadata as order description
+        if (!empty($metadata)) {
+            $description = 'Subscription billing';
+            if (isset($metadata['subscription_id'])) {
+                $description .= ' - ID: ' . $metadata['subscription_id'];
+            }
+            if (isset($metadata['billing_cycle'])) {
+                $description .= ' - Cycle: ' . $metadata['billing_cycle'];
+            }
+            $this->appendXmlNode($xmlRequest, $xmlSale, 'order-description', $description);
+        }
+
+        $xmlRequest->appendChild($xmlSale);
+
+        try {
+            $data = $this->sendApiRequest($xmlRequest, self::NMI_THREE_STEP_URL);
+            $gwResponse = @new SimpleXMLElement($data);
+
+            if ((string)$gwResponse->result == 1) {
+                // Save transaction
+                $transaction = new PaymentTransaction();
+                $transaction->setCreatedAt(new \DateTime());
+                $transaction->setUuid(Uuid::v4());
+                $transaction->setTransactionId((string)$gwResponse->{'transaction-id'});
+                $transaction->setAmount($amount);
+                $transaction->setCurrencyCode($currency);
+                $transaction->setPaymentStatus(PaymentStatus::APPROVED->value);
+                $transaction->setLast4Digits('****'); // Customer vault doesn't expose card details
+                $this->entityManager->persist($transaction);
+                $this->entityManager->flush();
+
+                $this->logger->info('Rebilling successful', [
+                    'customer_id' => $customerId,
+                    'transaction_id' => (string)$gwResponse->{'transaction-id'},
+                    'amount' => $amount
+                ]);
+
+                return [
+                    'status' => 'success',
+                    'transaction_id' => (string)$gwResponse->{'transaction-id'},
+                    'amount' => $amount,
+                    'currency' => $currency
+                ];
+            } else {
+                $this->logger->error('Rebilling failed', [
+                    'customer_id' => $customerId,
+                    'response' => $data
+                ]);
+
+                return [
+                    'status' => 'error',
+                    'message' => (string)$gwResponse->{'result-text'} ?: 'Rebilling failed'
+                ];
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Rebilling exception', [
+                'customer_id' => $customerId,
+                'exception' => $e->getMessage()
+            ]);
+
+            return [
+                'status' => 'error',
+                'message' => 'Rebilling processing failed: ' . $e->getMessage()
+            ];
         }
     }
 }

@@ -35,9 +35,8 @@ class Step2Type extends AbstractType
             ->add('billing-cc-exp', TextType::class, [
                 'label' => 'Expiration Date (MMYY)',
                 'attr' => [
-                    'placeholder' => '1012',
-                    'class' => 'form-control',
-                    'value' => '1012'
+                    'placeholder' => 'MMYY',
+                    'class' => 'form-control'
                 ],
                 'constraints' => [
                     new NotBlank(['message' => 'Please enter an expiration date']),
