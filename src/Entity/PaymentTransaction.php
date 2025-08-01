@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\PaymentTransactionRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: PaymentTransactionRepository::class)]
 #[ORM\Table(name: 'payment_transactions_tbl')]
@@ -41,7 +42,7 @@ class PaymentTransaction
 
     public function __construct()
     {
-        $this->uuid = uniqid('', true); // Generate a unique identifier
+        $this->uuid = Uuid::v4()->toRfc4122(); // Generate a proper UUID v4
     }
 
     public function getId(): ?int
