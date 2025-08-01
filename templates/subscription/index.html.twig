@@ -1,0 +1,76 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Subscription Management{% endblock %}
+
+{% block body %}
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-12">
+            <h1>Subscription Management</h1>
+
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Create New Subscription</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Set up recurring billing for customers with stored payment methods.</p>
+                            <a href="{{ path('app_subscription_create') }}" class="btn btn-primary">Create Subscription</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>API Documentation</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Manage subscriptions programmatically via REST API.</p>
+                            <div class="d-flex gap-2">
+                                <a href="{{ path('app_api_documentation') }}" class="btn btn-primary" target="_blank">Interactive API Docs</a>
+                                <a href="{{ path('app_openapi_docs') }}" class="btn btn-outline-primary" target="_blank">OpenAPI YAML</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Available API Endpoints</h5>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item">
+                                    <strong>GET</strong> <code>/subscription/api/subscriptions?customer_id={id}</code>
+                                    <br><small class="text-muted">List subscriptions for a customer</small>
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>POST</strong> <code>/subscription/api/subscriptions</code>
+                                    <br><small class="text-muted">Create a new subscription</small>
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>POST</strong> <code>/subscription/api/subscriptions/{uuid}/cancel</code>
+                                    <br><small class="text-muted">Cancel a subscription</small>
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>POST</strong> <code>/subscription/api/rebilling/process</code>
+                                    <br><small class="text-muted">Process due rebilling charges</small>
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>GET</strong> <code>/subscription/api/statistics</code>
+                                    <br><small class="text-muted">Get subscription statistics</small>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

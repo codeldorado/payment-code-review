@@ -1,0 +1,62 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Create Subscription{% endblock %}
+
+{% block body %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Create New Subscription</h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <strong>Note:</strong> The customer must already have a payment method stored in the payment gateway vault.
+                        The Customer ID should match the ID used when storing their payment information.
+                    </div>
+
+                    {{ form_start(form) }}
+                        <div class="mb-3">
+                            {{ form_label(form.customerId) }}
+                            {{ form_widget(form.customerId, {'attr': {'class': 'form-control'}}) }}
+                            {{ form_errors(form.customerId) }}
+                            {% if form.customerId.vars.help %}
+                                <div class="form-text">{{ form.customerId.vars.help }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    {{ form_label(form.amount) }}
+                                    {{ form_widget(form.amount, {'attr': {'class': 'form-control'}}) }}
+                                    {{ form_errors(form.amount) }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    {{ form_label(form.currency) }}
+                                    {{ form_widget(form.currency, {'attr': {'class': 'form-control'}}) }}
+                                    {{ form_errors(form.currency) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            {{ form_label(form.frequency) }}
+                            {{ form_widget(form.frequency, {'attr': {'class': 'form-control'}}) }}
+                            {{ form_errors(form.frequency) }}
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            {{ form_widget(form.submit) }}
+                            <a href="{{ path('app_subscription_index') }}" class="btn btn-secondary">Cancel</a>
+                        </div>
+                    {{ form_end(form) }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
