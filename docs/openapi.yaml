@@ -1,37 +1,362 @@
 openapi: 3.0.0
 info:
-  title: Transaction API
-  version: 1.0.0
-  description: API for managing transactions
+  title: Payment Gateway API
+  version: 2.0.0
+  description: Comprehensive API for payment processing, subscriptions, and vault management
+  contact:
+    name: Payment Gateway Support
+    email: support@paymentgateway.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Development server
+  - url: https://api.paymentgateway.com
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
 paths:
-    /api/transactions:
-        get:
-            summary: List all transactions
-            responses:
-                '200':
-                    description: A list of transactions
-                    content:
-                        application/json:
-                            schema:
-                                type: array
-                                items:
-                                    type: object
-                                    properties:
-                                        uuid:
-                                            type: string
-                                        transaction_id:
-                                            type: string
-                                        amount:
-                                            type: number
-                                            format: float
-                                        currency:
-                                            type: string
-                                        payment_status:
-                                            type: string
-                                            enum: [approved, refunded, failed]
-                                        last4_digits:
-                                            type: string
-                                        created_at:
-                                            type: string
-                                            format: date-time
-                                            example: '2023-10-01T12:00:00Z'
+  /api/transactions:
+    get:
+      summary: List all transactions
+      description: Retrieve a list of payment transactions with optional filtering
+      tags:
+        - Transactions
+      parameters:
+        - name: transaction-id
+          in: query
+          description: Filter by specific transaction ID
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /subscription/api/subscriptions:
+    get:
+      summary: List customer subscriptions
+      description: Retrieve subscriptions for a specific customer
+      tags:
+        - Subscriptions
+      parameters:
+        - name: customer_id
+          in: query
+          description: Customer ID to filter subscriptions
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of customer subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new subscription
+      description: Create a recurring billing subscription for a customer
+      tags:
+        - Subscriptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+      responses:
+        '201':
+          description: Subscription created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /subscription/api/subscriptions/{uuid}/cancel:
+    post:
+      summary: Cancel a subscription
+      description: Cancel an active subscription
+      tags:
+        - Subscriptions
+      parameters:
+        - name: uuid
+          in: path
+          description: Subscription UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Subscription cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Subscription cancelled successfully"
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /subscription/api/rebilling/process:
+    post:
+      summary: Process due rebilling
+      description: Process all subscriptions that are due for billing
+      tags:
+        - Rebilling
+      responses:
+        '200':
+          description: Rebilling processing completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Rebilling processing completed"
+                  processed_count:
+                    type: integer
+                    example: 5
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RebillingResult'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /subscription/api/statistics:
+    get:
+      summary: Get subscription statistics
+      description: Retrieve statistics about subscriptions
+      tags:
+        - Statistics
+      responses:
+        '200':
+          description: Subscription statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionStatistics'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Transaction:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Unique identifier for the transaction
+        transaction_id:
+          type: string
+          description: Payment gateway transaction ID
+        amount:
+          type: number
+          format: float
+          description: Transaction amount
+        currency_code:
+          type: string
+          description: Currency code (e.g., USD, EUR)
+        payment_status:
+          type: string
+          enum: [Approved, Declined, Failed, Pending, Refunded]
+          description: Current status of the payment
+        last4_digits:
+          type: string
+          description: Last 4 digits of the payment method
+        created_at:
+          type: string
+          format: date-time
+          description: Transaction creation timestamp
+      required:
+        - uuid
+        - transaction_id
+        - amount
+        - currency_code
+        - payment_status
+        - created_at
+
+    Subscription:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Unique identifier for the subscription
+        customer_id:
+          type: string
+          description: Customer identifier
+        amount:
+          type: number
+          format: float
+          description: Subscription amount
+        currency:
+          type: string
+          description: Currency code
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+          description: Billing frequency
+        status:
+          type: string
+          enum: [active, cancelled, paused]
+          description: Subscription status
+        next_billing_date:
+          type: string
+          format: date-time
+          description: Next billing date
+        created_at:
+          type: string
+          format: date-time
+          description: Subscription creation timestamp
+      required:
+        - uuid
+        - customer_id
+        - amount
+        - currency
+        - frequency
+        - status
+        - created_at
+
+    CreateSubscriptionRequest:
+      type: object
+      properties:
+        customer_id:
+          type: string
+          description: Customer identifier
+        amount:
+          type: number
+          format: float
+          minimum: 0.01
+          description: Subscription amount
+        currency:
+          type: string
+          enum: [USD, EUR, GBP]
+          description: Currency code
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+          description: Billing frequency
+        metadata:
+          type: object
+          description: Additional metadata
+      required:
+        - customer_id
+        - amount
+        - currency
+        - frequency
+
+    RebillingResult:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+          description: Subscription UUID
+        customer_id:
+          type: string
+          description: Customer identifier
+        result:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [success, error]
+            transaction_id:
+              type: string
+              description: Transaction ID if successful
+            message:
+              type: string
+              description: Error message if failed
+      required:
+        - subscription_id
+        - customer_id
+        - result
+
+    SubscriptionStatistics:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of subscriptions
+        active:
+          type: integer
+          description: Number of active subscriptions
+        cancelled:
+          type: integer
+          description: Number of cancelled subscriptions
+      required:
+        - total
+        - active
+        - cancelled
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+      required:
+        - error
+        - message
